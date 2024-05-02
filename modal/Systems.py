@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Optional
 import math
 
-def build_coefficients_matrix() -> np.Array:
+def build_coefficients_matrix() -> np.array:
     return 0
 
 def factorial_sum(last_value: int, n_variables: int, n: int) -> float:
@@ -120,10 +120,26 @@ class PolynomialSystem():
     
     def add_equation(self, expression) -> None:
         LHS, RHS_items = build_coefficients_from_string(expression, n_variables=self.n_variables)
+        orders = []
         for order, n_columns, row in RHS_items:
+            orders.append(order)
             if order not in self.matrices:
                 self.matrices[order] = np.zeros((self.n_variables, n_columns))
                 self.matrices[order][LHS-1] = row
+            else:
+                self.matrices[order][LHS-1] = row
+        for order_ in self.matrices.keys():
+            if order_ not in orders:
+                self.matrices[order_][LHS-1] = np.zeros((self.matrices[order_].shape[1]))
+        
+        to_delete = []
+        for order in self.matrices.keys():
+            if not np.any(self.matrices[order]):
+                to_delete.append(order)
+
+        for order in to_delete:
+            del self.matrices[order]
+
         print("Equation added")
         self.matrices = dict(sorted(self.matrices.items()))
 
