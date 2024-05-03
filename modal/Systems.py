@@ -2,6 +2,9 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Optional
 import math
+import sympy
+from sympy import *
+
 
 def build_coefficients_matrix() -> np.array:
     return 0
@@ -76,6 +79,7 @@ def build_coefficients_from_string(expression, n_variables) -> tuple:
     
     """
     expression = expression.replace(" ", "")
+    expression = expression.replace("-x", "-1*x")
     LHS, RHS = expression.split("=")
     raw_monomials = RHS.split("+")
 
@@ -106,13 +110,27 @@ def build_coefficients_from_string(expression, n_variables) -> tuple:
     
     return int(LHS[1]), list(zip(orders, n_columns, rows))
 
+def generate_monomials(variables, order, current_order=0, current_product=1):
+    if current_order == order:
+        return [current_product]
+    else:
+        monomials = []
+        for v in variables:
+            monomials += generate_monomials(variables, order, current_order + 1, current_product * v)
+        return monomials
+
 
 class PolynomialSystem():
 
     def __init__(self, n_variables: int):
         self.n_variables = n_variables
         self.matrices = {}
-        self.LHS = np.ones((n_variables,1))
+        self.LHS = np.ones((n_variables, 1))
+        vars = []
+        for i in range(n_variables):
+            vars.append(symbols(f"x{i}"))
+        self.variables = Matrix(vars)
+
         print("System created.")
 
     def add_coefficients_matrix(self, order: int) -> None:
@@ -140,8 +158,50 @@ class PolynomialSystem():
         for order in to_delete:
             del self.matrices[order]
 
-        print("Equation added")
         self.matrices = dict(sorted(self.matrices.items()))
+        self.make_monomials()
+        print("Equation added")
+
+        return None
+    
+    def make_monomials(self) -> None:
+        self.monomials = []
+        for order in self.matrices.keys():
+            if order == 1: pass
+            else:
+                self.monomials = generate_monomials(list(self.variables, order))
+                
+    
+    def diagonalize(self) -> None:
+
+        if self.matrices[1] == {}:
+            return None
+        
+        else:
+            eigvals, eigvecs = np.linalg.eig(self.matrices[1])
+            eigvals = np.diag(eigvals)
+            eigvec_transform = np.linalg.inv(eigvecs)
+            self.diag_matrices = {}
+            self.diag_matrices[1] = np.matmul(self.matrices[1], eigvec_transform)
+            self.diag_variables = Matrix(eigvec_transform)*self.variables          
+
+            diag_monomials = {}
+            for order in self.matrices.keys():
+                if order == 1: 
+                    diag_monomials[order] = expand(Matrix(eigvecs)*(Matrix(self.matrices[order])*self.diag_variables))
+                    
+                else:
+                    dict_subs = {}
+                    for i in range(self.n_variables):
+                        dict_subs[f"x{i}"] = self.diag_variables[i]
+                    
+                    diag_monomials[order] = expand(Matrix(eigvecs)*(Matrix(self.matrices[order])*self.monomials.subs(dict_subs)))
+            
+            for n in self.n_variables:
+                expression = f"u{i}' = "
+                for order in self.matrices.keys():
+                    expression += diag_monomials[order][n]
+                self.add_equation(expression)
 
         return None
     
