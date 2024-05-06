@@ -4,7 +4,6 @@ from typing import Optional
 import math
 import sympy
 from sympy import *
-import re
 
 
 def build_coefficients_matrix() -> np.array:
@@ -111,6 +110,7 @@ class PolynomialSystem():
     def __init__(self, n_variables: int):
         self.n_variables = n_variables
         self.matrices = {}
+        self.diag_matrices = {}
         self.LHS = np.ones((n_variables, 1))
         vars = []
         for i in range(n_variables):
@@ -121,7 +121,7 @@ class PolynomialSystem():
         print("System created.")
     
     
-    def build_coefficients_from_string(self, expression) -> tuple:
+    def build_coefficients_from_string(self, expression, diag) -> tuple:
 
         """
         Build a row of the matrices of coefficients corresponding
@@ -148,6 +148,13 @@ class PolynomialSystem():
         
         """
         expression = expression.replace(" ", "")
+
+        if diag:
+            expression = expression.replace("u", "x")
+            expression = expression.replace("-", "+-")
+            expression = expression.replace("++", "+")
+            expression = expression.replace("=+", "=")
+
         expression = expression.replace("-x", "-1*x")
         LHS, RHS = expression.split("=")
         raw_monomials = RHS.split("+")
@@ -187,31 +194,58 @@ class PolynomialSystem():
     def add_coefficients_matrix(self, order: int) -> None:
         return None
     
-    def add_equation(self, expression) -> None:
-        LHS, RHS_items = self.build_coefficients_from_string(expression)
+    def add_equation(self, expression, diag=False) -> None:
+        LHS, RHS_items = self.build_coefficients_from_string(expression, diag)
         orders = []
-        for order, n_columns, row in RHS_items:
-            orders.append(order)
-            if order not in self.matrices.keys():
-                self.matrices[order] = np.zeros((self.n_variables, n_columns))
-                self.matrices[order][LHS-1] = row
-            else:
-                self.matrices[order][LHS-1] = row
-        for order_ in self.matrices.keys():
-            if order_ not in orders:
-                self.matrices[order_][LHS-1] = np.zeros((self.matrices[order_].shape[1]))
+
+        if diag == False:
+            for order, n_columns, row in RHS_items:
+                orders.append(order)
+                if order not in self.matrices.keys():
+                    self.matrices[order] = np.zeros((self.n_variables, n_columns))
+                    self.matrices[order][LHS] = row
+                else:
+                    self.matrices[order][LHS] = row
+            for order_ in self.matrices.keys():
+                if order_ not in orders:
+                    self.matrices[order_][LHS] = np.zeros((self.matrices[order_].shape[1]))
+            
+            to_delete = []
+            for order in self.matrices.keys():
+                if not np.any(self.matrices[order]):
+                    to_delete.append(order)
+
+            for order in to_delete:
+                del self.matrices[order]
+
+            self.matrices = dict(sorted(self.matrices.items()))
+            self.make_monomials()
+            print("Equation added")
         
-        to_delete = []
-        for order in self.matrices.keys():
-            if not np.any(self.matrices[order]):
-                to_delete.append(order)
+        else:
+            for order, n_columns, row in RHS_items:
+                orders.append(order)
+                if order not in self.diag_matrices.keys():
+                    self.diag_matrices[order] = np.zeros((self.n_variables, n_columns))
+                    self.diag_matrices[order][LHS] = row
+                else:
+                    self.diag_matrices[order][LHS] = row
+            for order_ in self.diag_matrices.keys():
+                if order_ not in orders:
+                    self.diag_matrices[order_][LHS] = np.zeros((self.diag_matrices[order_].shape[1]))
+            
+            to_delete = []
+            for order in self.diag_matrices.keys():
+                if not np.any(self.diag_matrices[order]):
+                    to_delete.append(order)
 
-        for order in to_delete:
-            del self.matrices[order]
+            for order in to_delete:
+                del self.diag_matrices[order]
 
-        self.matrices = dict(sorted(self.matrices.items()))
-        self.make_monomials()
-        print("Equation added")
+            self.diag_matrices = dict(sorted(self.diag_matrices.items()))
+            self.make_monomials()
+            print("Equation added")            
+
 
         return None
     
@@ -229,7 +263,7 @@ class PolynomialSystem():
     
     def diagonalize(self) -> None:
 
-        if self.matrices[1] == {}:
+        if 1 not in self.matrices.keys():
             return None
         
         else:
@@ -239,34 +273,41 @@ class PolynomialSystem():
 
             eigvals, eigvecs = np.linalg.eig(self.matrices[1])
             eigvals = np.diag(eigvals)
-            eigvec_transform = np.linalg.inv(eigvecs)
-            self.diag_matrices = {}
-            self.diag_matrices[1] = np.matmul(self.matrices[1], eigvec_transform)
-            self.diag_variables = Matrix(eigvec_transform)*self.variables
+            eigvec_invs = np.linalg.inv(eigvecs)
+            self.diag_matrices[1] = np.matmul(self.matrices[1], eigvecs)
+            self.diag_variables = Matrix(eigvecs)*self.variables
             self.diag_variables = self.diag_variables.subs(new_vars)         
 
             diag_monomials = {}
             for order in self.matrices.keys():
                 if order == 1: 
-                    diag_monomials[order] = expand(Matrix(eigvecs)*(Matrix(self.matrices[order])*self.diag_variables))
+                    # Check if calculation is correct:
+                    # diag_monomials[order] = expand(Matrix(eigvec_invs)*(Matrix(self.matrices[order])*self.diag_variables))
+                    # Otherwise, use the simpler:
+                    diag_monomials[order] = Matrix(eigvals)*Matrix(list(new_vars.values()))
                     
                 else:
                     dict_subs = {}
                     for i in range(self.n_variables):
                         dict_subs[f"x{i}"] = self.diag_variables[i]
                     
-                    diag_monomials[order] = expand(Matrix(eigvecs)*((Matrix(self.matrices[order])*Matrix(self.monomials[order]).subs(dict_subs))))
+                    diag_monomials[order] = expand(Matrix(eigvec_invs)*((Matrix(self.matrices[order])*Matrix(self.monomials[order]).subs(dict_subs))))
             
-            for n in self.n_variables:
-                expression = f"u{i}' = "
+            for n in range(self.n_variables):
+                expression = f"u{n}' ="
                 for order in self.matrices.keys():
-                    expression += diag_monomials[order][n]
-                self.add_equation(expression)
+                    if expression[-1] == "=":
+                        expression += str(diag_monomials[order][n])
+                    else:
+                        expression += "+ " + str(diag_monomials[order][n])
+                self.add_equation(expression, diag=True)
 
         return None
     
     def print_system(self) -> None:
-        orders = self.matrices.keys()
+
+        matrices = self.matrices
+        orders = matrices.keys()
         print_string = "\nX' ="
         for order in orders:
             if order == 1:
@@ -280,9 +321,32 @@ class PolynomialSystem():
         print("\nX' is the derivative vector with coefficients \n", self.LHS)
         for order in orders:
             if order == 1:
-                print("\n\n\n L is a matrix with coefficients \n", self.matrices[1])
+                print("\n\n\n L is a matrix with coefficients \n", matrices[1])
             else:
-                print(f"\n\n\n N{order}(X) are nonlinear terms with order {order} and matrix coefficients \n", self.matrices[order])
+                print(f"\n\n\n N{order}(X) are nonlinear terms with order {order} and matrix coefficients \n", matrices[order])
+
+        if self.diag_matrices:
+            matrices = self.diag_matrices
+
+            print("\n\nIn diagonal form, the system is: ")
+
+            orders = matrices.keys()
+            print_string = "\nU' ="
+            for order in orders:
+                if order == 1:
+                    print_string += " DU"
+                else:
+                    print_string += f" + M{order}(U)"
+            
+            print_string += ", where:"
+            print(print_string)
+
+            print("\nU' is the derivative vector with coefficients \n", self.LHS)
+            for order in orders:
+                if order == 1:
+                    print("\n\n\n M is a matrix with coefficients \n", matrices[1])
+                else:
+                    print(f"\n\n\n M{order}(U) are nonlinear terms with order {order} and matrix coefficients \n", matrices[order])
 
 
     def normal_form(self) -> None:
