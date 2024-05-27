@@ -186,7 +186,6 @@ class PolynomialSystem():
                 n_columns.append(last_column + 1)
             else:
                 idx = orders.index(order)
-                print(idx)
                 rows[idx][column] += coefficients[i]
         
         return int(LHS[1]), list(zip(orders, n_columns, rows))
@@ -296,6 +295,8 @@ class PolynomialSystem():
             for n in range(self.n_variables):
                 expression = f"u{n}' ="
                 for order in self.matrices.keys():
+                    if str(diag_monomials[order][n]) == "0":
+                        continue
                     if expression[-1] == "=":
                         expression += str(diag_monomials[order][n])
                     else:
@@ -344,7 +345,7 @@ class PolynomialSystem():
             print("\nU' is the derivative vector with coefficients \n", self.LHS)
             for order in orders:
                 if order == 1:
-                    print("\n\n\n M is a matrix with coefficients \n", matrices[1])
+                    print("\n\n\n D is a matrix with coefficients \n", matrices[1])
                 else:
                     print(f"\n\n\n M{order}(U) are nonlinear terms with order {order} and matrix coefficients \n", matrices[order])
 
