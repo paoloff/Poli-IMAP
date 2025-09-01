@@ -1,3 +1,3 @@
-# Poli-IMAP
+# Poli_IMAP
+A software toolkit for obtaining the invariant manifolds of general nonlinear dynamical systems using the direct parametrization method.
 
-Repository for Poli-IMAP: [P]oli's [I]nvariant [Ma]nifold [P]arametrizer.
