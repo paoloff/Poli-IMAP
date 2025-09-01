@@ -1,0 +1,151 @@
+include("../src/Poli_IMap.jl");
+
+# Constants
+m = 1.0
+c1 = 0.03
+c2 = sqrt(3) * 0.03
+k = 3.0
+κ = 0.4
+α = - 0.6
+P = 3.0
+ϵ = 0.003
+Ω = 1.5
+cte = 2.0
+
+function F(x)
+    return [x[3],
+            
+            x[4],
+            
+            - cte * (k / m) * x[1] + (k / m) * x[2] - (c1 + c2) / m * x[3] + (c2 / m) * x[4]
+            - (κ / m) * x[1] * x[1] * x[1] - (α / m) * x[3] * x[3] * x[3]
+            + ϵ * ((P + x[8]) / m) * (x[5]),
+            
+            (k / m) * x[1] + (-cte * k / m) * x[2] + c2 / m * x[3] - ((c1 + c2) / m) * x[4],
+            
+            - 1.5 * x[6] - x[7] * x[6], # cos((1.5 + ΔΩ) * t)
+            
+            1.5 * x[5] + x[7] * x[5], # sin((1.5 + ΔΩ) * t)
+            
+            0.0 * x[7], # ΔΩ
+
+            0.0 * x[8]] # ΔP
+end
+
+B = []
+
+# system settings
+domainDim = 8
+reducedDim = 6
+maxOrder = 9
+
+# initializing and finding the linearized system
+sys = System(domainDim=domainDim, 
+            reducedDim=reducedDim, 
+            F=F, B=B, 
+            maxOrder=maxOrder);
+
+initialize!(sys);
+linearize!(sys, computeFullSpectrum=true);
+
+eigvals = deepcopy(sys.eigenvalues);
+eigvals[6] = eigvals[8];
+eigvals[7] = 0 + 0.0im;
+eigvals[8] = 0 + 0.0im;
+sys.eigenvalues = deepcopy(eigvals);
+eigvecs = deepcopy(sys.eigenvectors);
+eigvecs[:,6] = sys.eigenvectors[:,8];
+eigvecs[:,7] = sys.eigenvectors[:,6];
+eigvecs[:,8] = sys.eigenvectors[:,7];
+sys.eigenvectors = deepcopy(eigvecs);
+sys.leftEigenvectors = inv(sys.eigenvectors);
+
+pSet = ParametrizationSettings(
+        reducedDim = sys.reducedDim,
+        λ = sys.eigenvalues,
+        Y = sys.eigenvectors,
+        X = sys.leftEigenvectors,
+        tangAxes = [3, 4, 5, 6, 7, 8],
+        normAxes = [1, 2],
+        autIdxs = [1, 2, 3, 4],
+        nonAutIdxs = [5, 6],
+        bifIdxs = [7, 8],
+        fullSpectrum = true,
+        includesNonAutonomous = true,
+        includesBifurcation = true,
+        parametrizationStyle = "resonant",
+        reducedDims = [2, 2, 2],
+        homogExponents = Dict(),
+        k₁ = 8,
+        autDim = 4,
+        autAxes = [1, 2, 3, 4],
+        autTangAxes = [3, 4],
+        autNormAxes = [1, 2],
+        autReducedDim = 2,
+        autReducedAxes = [1, 2],
+        k₂ = 1,
+        nonAutDim = 2,
+        nonAutAxes = [5, 6],
+        nonAutAxesPairs = [(5, 6)],
+        nonAutReducedDim = 2,
+        nonAutReducedAxes = [3, 4],
+        nonAutReducedAxesMap = Dict((5, 6) => (3, 4)),
+        k₃ = 1,
+        bifDim = 2,
+        bifReducedAxes = [5, 6],
+        bifReducedAxesMap = Dict(7 => 5, 8 => 6),
+        autAndNonAutAxes = [1, 2, 3, 4, 5, 6],
+        autAndNonAutTangAxes = [3, 4, 5, 6],
+        autAndNonAutNormAxes = [1, 2],
+        autAndNonAutReducedAxes = [1, 2, 3, 4]
+        );
+
+
+# resonant condition function
+function resonance_condition(exponents::Tuple, reducedAxis::Int64)
+
+    resonant_pairs = Dict(1 => [1, 3], 2 => [2, 4], 3 => [3], 4 => [4])
+    anti_resonant_pairs = Dict(1 => [2, 4], 2 => [1, 3], 3 => nothing, 4 => nothing)
+
+    if reducedAxis ∈ keys(resonant_pairs)
+
+        if resonant_sum(exponents, 
+                        resonant_pairs[reducedAxis], 
+                        anti_resonant_pairs[reducedAxis],
+                        startingSum=1) == 0
+
+            return true
+        else
+            return false
+        end
+    end
+
+    return false
+    
+end
+
+# update parametrization settings
+generate_exponents!(pSet);
+generate_resonant_exponents!(pSet, resonance_condition);
+
+# instantiate pCache
+pCache = ParametrizationCache();
+
+# parametrize
+parametrize_autonomous!(sys::System,
+                        pSet::ParametrizationSettings,
+                        pCache::ParametrizationCache);
+
+parametrize_nonautonomous!(sys::System,
+                        pSet::ParametrizationSettings,
+                        pCache::ParametrizationCache);
+
+parametrize_bifurcation!(sys::System, 
+                        pSet::ParametrizationSettings,
+                        pCache::ParametrizationCache);
+
+
+
+
+
+
